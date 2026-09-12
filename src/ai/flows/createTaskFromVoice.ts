@@ -91,7 +91,7 @@ const createTaskFromVoiceFlow = ai.defineFlow(
     const wavAudio = await toWav(audioBuffer);
 
     const { text: transcription } = await ai.generate({
-        model: 'googleai/gemini-1.5-flash-latest',
+        model: 'googleai/gemini-flash-latest',
         prompt: [{ media: { url: `data:audio/wav;base64,${wavAudio}` } }, { text: "Transcribe this audio."}],
     });
     
