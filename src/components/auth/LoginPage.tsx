@@ -33,8 +33,8 @@ export default function LoginPage() {
   const auth = useAuth();
   const firestore = useFirestore();
 
-  const form = useForm({
-    resolver: zodResolver(isSigningUp ? signupSchema : loginSchema),
+  const form = useForm<z.infer<typeof signupSchema>>({
+    resolver: zodResolver(isSigningUp ? signupSchema : loginSchema) as any,
     defaultValues: { name: '', email: '', password: '' },
   });
   

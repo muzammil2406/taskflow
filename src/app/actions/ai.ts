@@ -1,6 +1,6 @@
 'use server';
 
-import { run } from 'genkit/flow';
+import { run } from '@genkit-ai/core';
 import { suggestAssignee } from '@/ai/ai-smart-assignee-suggestions';
 import type { UserProfile } from '@/types';
 import { autoPrioritizeTask } from '@/ai/flows/autoPrioritizeTask';
