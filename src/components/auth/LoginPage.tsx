@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { signInWithPopup, GoogleAuthProvider, UserCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword, User } from 'firebase/auth';
-import { doc, serverTimestamp, getDoc, setDoc, Timestamp } from 'firebase/firestore';
+import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, UserCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword, User } from 'firebase/auth';
+import { doc, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,24 +38,79 @@ export default function LoginPage() {
     defaultValues: { name: '', email: '', password: '' },
   });
   
-  const handleAuthSuccess = async (user: User) => {
-    if (!firestore) return;
-    const userRef = doc(firestore, 'users', user.uid);
-    const userSnap = await getDoc(userRef);
+  const handleAuthErrorMessage = (error: { code?: string; message?: string }, fallback: string): string => {
+    switch (error.code) {
+      case 'auth/operation-not-allowed':
+        return 'Google Sign-In is not enabled for this Firebase project. Enable it in Firebase Console, under Authentication, Sign-in method, Google, then redeploy.';
+      case 'auth/unauthorized-domain':
+        return 'This domain is not authorized for Google Sign-In. Add it under Firebase Console, Authentication, Settings, Authorized domains.';
+      case 'auth/network-request-failed':
+        return 'Network error. Check your internet connection and try again.';
+      case 'auth/popup-blocked':
+        return 'The sign-in popup was blocked by your browser. Allow popups for this site and try again.';
+      case 'auth/popup-closed-by-user':
+      case 'auth/cancelled-popup-request':
+        return 'Google Sign-In was cancelled.';
+      default:
+        return error.message || fallback;
+    }
+  };
 
-    if (!userSnap.exists()) {
+  const handleAuthSuccess = useCallback(async (user: User, nameOverride?: string) => {
+    try {
+      if (!firestore) return;
+      const userRef = doc(firestore, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
         const newUserProfile: Omit<UserProfile, 'createdAt'> & { createdAt: any } = {
-            uid: user.uid,
-            id: user.uid,
-            name: user.displayName || form.getValues('name') || 'New User',
-            email: user.email,
-            photoURL: user.photoURL,
-            createdAt: serverTimestamp(),
+          uid: user.uid,
+          id: user.uid,
+          name: nameOverride || user.displayName || 'New User',
+          email: user.email,
+          photoURL: user.photoURL,
+          createdAt: serverTimestamp(),
         };
         await setDoc(userRef, newUserProfile);
+      }
+    } catch (error) {
+      // Auth succeeded, but the profile write was denied (e.g. security rules not deployed).
+      console.warn('Signed in, but could not create the user profile in Firestore.', error);
+      toast({
+        title: 'Profile Setup Issue',
+        description: 'You are signed in, but your profile could not be saved. Make sure your Firestore security rules allow writes to /users/{uid}.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [firestore, toast]);
+
+  // Complete any pending Google redirect sign-in (initiated below).
+  useEffect(() => {
+    if (!auth) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (cancelled) return;
+        if (result?.user) {
+          await handleAuthSuccess(result.user);
+        }
+      } catch (error: any) {
+        if (cancelled) return;
+        setLoading(false);
+        toast({
+          title: 'Google Sign-In Error',
+          description: handleAuthErrorMessage(error, 'Could not complete Google Sign-In. Please try again.'),
+          variant: 'destructive',
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth, handleAuthSuccess, toast]);
   
   const onSubmit = async (values: z.infer<typeof loginSchema> | z.infer<typeof signupSchema>) => {
     if (!auth) return;
@@ -65,11 +120,12 @@ export default function LoginPage() {
       if (isSigningUp) {
         const signupValues = values as z.infer<typeof signupSchema>;
         userCredential = await createUserWithEmailAndPassword(auth, signupValues.email, signupValues.password);
+        await handleAuthSuccess(userCredential.user, signupValues.name);
       } else {
         const loginValues = values as z.infer<typeof loginSchema>;
         userCredential = await signInWithEmailAndPassword(auth, loginValues.email, loginValues.password);
+        await handleAuthSuccess(userCredential.user);
       }
-      await handleAuthSuccess(userCredential.user);
     } catch (error: any) {
       let description = 'An error occurred. Please try again.';
       if (error.code === 'auth/user-not-found') {
@@ -93,19 +149,16 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      await handleAuthSuccess(result.user);
+      await signInWithRedirect(auth, provider);
+      // The page redirects to Google auth and back; the redirect result is
+      // completed by the effect above on return.
     } catch (error: any) {
-        let description = 'Could not sign in with Google. Please try again.';
-        if (error.code === 'auth/operation-not-allowed') {
-            description = 'Google Sign-In is not enabled for this project. Please contact support.';
-        }
+      setLoading(false);
       toast({
         title: 'Google Sign-In Error',
-        description: error.message || description,
+        description: handleAuthErrorMessage(error, 'Could not sign in with Google. Please try again.'),
         variant: 'destructive',
       });
-      setLoading(false);
     }
   };
 
