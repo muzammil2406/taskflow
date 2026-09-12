@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, UserCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword, User } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, browserPopupRedirectResolver, GoogleAuthProvider, UserCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword, User } from 'firebase/auth';
 import { doc, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
 import { Button } from '@/components/ui/button';
@@ -149,9 +149,19 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithRedirect(auth, provider);
-      // The page redirects to Google auth and back; the redirect result is
-      // completed by the effect above on return.
+      try {
+        // Popup-first: errors are immediate and catchable (e.g. provider not
+        // enabled -> operation-not-allowed would surface here).
+        await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      } catch (popupError: any) {
+        // If the browser blocked the popup, fall back to a full-page redirect.
+        if (popupError?.code === 'auth/popup-blocked') {
+          await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
+          return; // page navigates away to Google and comes back
+        }
+        throw popupError;
+      }
+      // On success the profile is ensured automatically by useUser.
     } catch (error: any) {
       setLoading(false);
       toast({
