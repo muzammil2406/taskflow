@@ -8,6 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '../ui/form';
+import { Label } from '../ui/label';
 import { doc } from 'firebase/firestore';
 import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -73,7 +74,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
                 <div className="flex items-center justify-between">
-                    <FormLabel>Theme</FormLabel>
+                    <Label>Theme</Label>
                     <ThemeToggle />
                 </div>
             </CardContent>
